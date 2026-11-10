@@ -16,8 +16,8 @@ pio run -t upload       # flash over USB
 pio device monitor      # serial log, 115200 baud
 ```
 
-Later updates need no USB: open `http://bambulight.local`, choose **Update**,
-and upload `.pio/build/d1_mini/firmware.bin`.
+Later updates need no USB: open `http://bambulight.local/update`, sign in, and
+upload `.pio/build/d1_mini/firmware.bin`.
 
 If your lamps are on when they should be off (active-low relay module), add
 `build_flags = -DLAMP_ON_LEVEL=LOW` to `platformio.ini`.
@@ -25,25 +25,36 @@ If your lamps are on when they should be off (active-low relay module), add
 ## Using it
 
 - **First boot:** join the WiFi network `BambuLight-XXXX` and the setup page opens.
-  Enter your WiFi, the Bambuddy IP, port (default 8000) and API key.
-- **Afterwards:** `http://bambulight.local` (or the device IP) has the light
-  status page, settings, a lamp test and the firmware update page.
+  Enter your WiFi, the Bambuddy IP, port (default 8000), API key and a
+  **device password**.
+- **Afterwards:** `http://bambulight.local` (or the device IP) shows the light
+  status and a lamp test. **Settings**, **Change WiFi** and **Firmware** ask for
+  user `admin` and the device password. Without a device password those pages
+  stay locked; factory reset to set one.
+- **Secrets:** the API key and device password are never shown again on any
+  page. Leave the field blank to keep the saved value.
 - **Factory reset:** hold the button for 5 seconds after the device has started.
   Do not hold it while plugging in power; that puts the ESP in flash mode.
+- **Relay boards:** turn off the "green blip when every printer is busy"
+  setting, or the relay clicks every 3 seconds.
 
 ## How a printer is classified
 
-Read from `GET /api/v1/printers/{id}/status`, first match wins:
+All printers are read in one request, `GET /api/v1/bulk/printer-statuses?ids=…`.
+Older Bambuddy versions without that route are read one printer at a time from
+`GET /api/v1/printers/{id}/status`. First match wins:
 
-| Result          | Condition                                                             |
-|-----------------|-----------------------------------------------------------------------|
-| Needs attention | Not connected (can be turned off in settings)                         |
-| Error           | `state` is `FAILED`, or an HMS entry with severity 1                  |
-| Needs attention | `state` is `PAUSE`, HMS severity 2, or `awaiting_plate_clear` is true |
-| Free            | `state` is `IDLE` or `FINISH`                                         |
-| Busy (no lamp)  | Anything else (`RUNNING`, `PREPARE`, ...)                             |
+| Result          | Condition                                                                 |
+|-----------------|---------------------------------------------------------------------------|
+| Needs attention | Not connected (can be turned off in settings)                             |
+| Error           | An HMS entry with severity 1 (this covers a failed print's `print_error`) |
+| Needs attention | `state` is `PAUSE`, HMS severity 2, or `awaiting_plate_clear` is true     |
+| Free            | `state` is `IDLE`, `FINISH`, or `FAILED` with no error (a cancelled print) |
+| Busy (no lamp)  | Anything else (`RUNNING`, `PREPARE`, ...)                                 |
+| Needs attention | No status came back for that printer                                      |
 
-Printers marked inactive in Bambuddy are ignored. Up to 16 printers.
+Printers marked inactive in Bambuddy are ignored. Up to 32 printers; any beyond
+that are listed as a warning on the status page.
 
 ## Light logic
 
@@ -103,17 +114,17 @@ No-solder alternative: an ESP8266 4-channel relay board ("ESP-12F Relay X4",
 
 - REST API at `http://<ip>:<port>/api/v1`, `X-API-Key` header, read-only key
   (Settings > API Keys).
-- Fetch the printer list (`GET /printers/`), then `GET /printers/{id}/status`
-  per printer every 5 s (configurable). The read limit is 100 requests a
-  minute, so the interval stretches automatically with more than 6 printers.
+- Fetch the printer list (`GET /printers/`, refreshed every minute), then all
+  statuses in one bulk request every 5 s (configurable). In per-printer
+  fallback the interval stretches to stay under the 100 reads a minute limit.
 - Field names were taken from the Bambuddy source, not from a live server.
 
 ## Included extras
 
-- All printers busy: short green blip every 3 s so the device is visibly alive
+- All printers busy: short green blip every 3 s so the device is visibly alive (optional)
 - Printer offline counts as "needs attention" (optional)
-- Status and settings web page at `bambulight.local`, with a lamp test
-- Firmware update from the browser
+- Status page at `bambulight.local` with a lamp test
+- Password-protected settings, WiFi change and firmware update pages
 
 ## Later ideas
 
